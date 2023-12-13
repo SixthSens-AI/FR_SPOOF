@@ -121,8 +121,9 @@ class RealTimePred:
             j = np.argmax(preds)
             label_name = le.classes_[j]  # get label of predicted class
 
-            if label_name == 'fake' and preds[j] > 0.85:
-                cv2.putText(test_copy, "SPOOF", (x1, y1 - 40), cv2.FONT_HERSHEY_DUPLEX, 0.7, (255, 0, 0), 2)
+            # check if the predicted class is "fake" and the probability threshold is beyond 0.9
+            if label_name == 'fake' and preds[j] > 0.9:
+                cv2.putText(test_copy, "Not Live", (x1, y1 + 20), cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 0, 255), 2)
 
         if name == 'Unknown':
             color = (0, 0, 255)  # bgr
