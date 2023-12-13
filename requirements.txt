@@ -1,0 +1,13 @@
+numpy
+pandas
+matplotlib
+scipy
+jupyter
+pillow
+opencv-python-headless
+redis
+insightface
+onnxruntime-gpu
+scikit-learn
+load_dotenv
+streamlit-webrtc

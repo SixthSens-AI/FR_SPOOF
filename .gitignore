@@ -1,0 +1,10 @@
+.env
+__pycache__
+.idea
+/aloka-vision-venv
+/venv
+/playground/.ipynb_checkpoints
+/playground/redis.ipynb
+/playground/models
+/insightface_model
+/playground/datasets
