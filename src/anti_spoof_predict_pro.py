@@ -20,36 +20,9 @@ MODEL_MAPPING = {
     'MiniFASNetV2SE': MiniFASNetV2SE
 }
 
-# 人脸检测类，用于检测图像中的人脸
-class Detection:
-    def __init__(self):
-        caffemodel = "./resources/detection_model/Widerface-RetinaFace.caffemodel"  # Caffe模型文件路径
-        deploy = "./resources/detection_model/deploy.prototxt"  # Caffe模型配置文件路径
-        self.detector = cv2.dnn.readNetFromCaffe(deploy, caffemodel)  # 使用OpenCV加载Caffe模型
-        self.detector_confidence = 0.6  # 设置检测置信度阈值
-
-    # 获取图像中人脸的边界框
-    def get_bbox(self, img):
-        height, width = img.shape[0], img.shape[1]  # 获取图像的高度和宽度
-        aspect_ratio = width / height  # 计算图像的宽高比
-
-        if img.shape[1] * img.shape[0] >= 192 * 192:
-            # 如果图像像素总数大于等于192*192，就按比例缩放图像
-            img = cv2.resize(img,
-                             (int(192 * math.sqrt(aspect_ratio)),
-                              int(192 / math.sqrt(aspect_ratio))), interpolation=cv2.INTER_LINEAR)
-
-        blob = cv2.dnn.blobFromImage(img, 1, mean=(104, 117, 123))  # 从图像创建Caffe blob
-        self.detector.setInput(blob, 'data')  # 将blob输入到Caffe模型
-        out = self.detector.forward('detection_out').squeeze()  # 获取检测结果
-        max_conf_index = np.argmax(out[:, 2])  # 找到置信度最高的检测框
-        left, top, right, bottom = out[max_conf_index, 3] * width, out[max_conf_index, 4] * height, \
-                                   out[max_conf_index, 5] * width, out[max_conf_index, 6] * height
-        bbox = [int(left), int(top), int(right - left + 1), int(bottom - top + 1)]  # 获取边界框坐标
-        return bbox
 
 # 活体检测类，继承自人脸检测类
-class AntiSpoofPredict(Detection):
+class AntiSpoofPredict():
     def __init__(self, device_id, model_dir):
         super(AntiSpoofPredict, self).__init__()  # 调用父类的初始化方法
         self.device = torch.device("cuda:{}".format(device_id)
