@@ -1,38 +1,30 @@
-import numpy as np
 import pandas as pd
-import cv2
 import redis
-import os
 from dotenv import load_dotenv
-
-import av
-import tensorflow as tf
-import pickle
+import os
+import cv2
+import numpy as np
+import warnings
+import time
 
 load_dotenv()
 
 from insightface.app import FaceAnalysis
 from sklearn.metrics import pairwise
 
-model_path='liveness.model'
-le_path='label_encoder.pickle'
-encodings='encoded_faces.pickle'
-detector_folder='face_detector'
-confidence=0.5
-args = {'model':model_path, 'le':le_path, 'detector':detector_folder,
-	'encodings':encodings, 'confidence':confidence}
+from src.anti_spoof_predict_pro import AntiSpoofPredict
+from src.generate_patches import CropImage
+from src.utility import parse_model_name
 
-with open(args['encodings'], 'rb') as file:
-	encoded_data = pickle.loads(file.read())
+warnings.filterwarnings('ignore')
 
-# proto_path = os.path.sep.join([args['detector'], 'deploy.prototxt'])
-# model_path = os.path.sep.join([args['detector'], 'res10_300x300_ssd_iter_140000.caffemodel'])
-# detector_net = cv2.dnn.readNetFromCaffe(proto_path, model_path)
-
-# load the liveness detector model and label encoder from disk
-liveness_model = tf.keras.models.load_model(args['model'])
-le = pickle.loads(open(args['le'], 'rb').read())
-
+def check_image(image):
+    height, width, channel = image.shape
+    if width/height != 3/4:
+        print("Image is not appropriate!!!\nHeight/Width should be 4/3.")
+        return False
+    else:
+        return True
 
 # Connect to Redis
 hostname = 'redis-13570.c305.ap-south-1-1.ec2.cloud.redislabs.com'
@@ -85,6 +77,8 @@ def ml_search_algorithm(dataframe, feature_column, test_vector, thresh=0.5):
         name = "Unknown"
     return name
 
+model_test = AntiSpoofPredict(0, "./resources/anti_spoof_models")
+image_cropper = CropImage()
 # Realtime Prediction
 # save logs for every 1 min
 class RealTimePred:
@@ -106,24 +100,43 @@ class RealTimePred:
             embedding = res['embedding']
             name = ml_search_algorithm(dataframe, feature_column, test_vector=embedding, thresh=thresh)
 
-            # 3. perform liveness detection using the same bounding box
-            face = test_copy[y1:y2, x1:x2]
-            try:
-                face = cv2.resize(face, (32, 32))
-            except:
-                break
 
-            face = face.astype('float') / 255.0
-            face = tf.keras.preprocessing.image.img_to_array(face)
-            face = np.expand_dims(face, axis=0)
+            # 3. Spoof
+            prediction = np.zeros((1, 3))
+            for model_name in os.listdir("./resources/anti_spoof_models"):
+                h_input, w_input, model_type, scale = parse_model_name(model_name)
+                param = {
+                    "org_img": test_copy,
+                    "bbox": res['bbox'],
+                    "scale": scale,
+                    "out_w": w_input,
+                    "out_h": h_input,
+                    "crop": True,
+                }
+                if scale is None:
+                    param["crop"] = False
+                img = image_cropper.crop(**param)
 
-            preds = liveness_model.predict(face)[0]
-            j = np.argmax(preds)
-            label_name = le.classes_[j]  # get label of predicted class
+                predictions = model_test.predict_batch([img])
 
-            # check if the predicted class is "fake" and the probability threshold is beyond 0.9
-            if label_name == 'fake' and preds[j] > 0.9:
-                cv2.putText(test_copy, "Not Live", (x1, y1 + 20), cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 0, 255), 2)
+                prediction += predictions[model_name]
+
+            label = np.argmax(prediction)
+            value = prediction[0][label] / 2
+            if label == 1:
+                result_text = "Live: {:.2f}".format(value)
+                color = (255, 0, 0)
+            else:
+                result_text = "Fake: {:.2f}".format(value)
+                color = (0, 0, 255)
+
+            cv2.putText(
+                test_copy,
+                result_text,
+                (x1, y1 - 30),
+                cv2.FONT_HERSHEY_COMPLEX, 0.7, color, 2)
+
+
 
         if name == 'Unknown':
             color = (0, 0, 255)  # bgr
@@ -148,7 +161,6 @@ class RegistrationForm:
         self.sample = 0
 
     def get_embedding(self, frame):
-        y1, y2, x1, x2 = 0, 0, 0, 0
         # get result from face analysis
         results = app.get(frame, max_num=1)  # max_num: maximum number of faces to detect
         embeddings = None
